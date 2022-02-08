@@ -1,0 +1,6 @@
+进入hadoop的sbin目录
+.\start-all.cmd
+进入hive的bin目录
+.\hive --service metastore
+.\hive --service hiveserver2
+
