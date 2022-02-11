@@ -1,6 +1,7 @@
 package com.kunghsu.example.coupon;
 
 import com.kunghsu.apache.flink.flinkkafka.config.FlinkKafkaConfig;
+import com.kunghsu.common.utils.DateUtils;
 import com.kunghsu.common.utils.JacksonUtils;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
@@ -21,21 +22,25 @@ import org.apache.flink.util.OutputTag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Calendar;
+import java.util.Date;
 import java.util.UUID;
 
+import static com.kunghsu.common.utils.DateUtils.PATTERN_YYYY_MM_DD_HH_MM_SS;
 import static org.apache.flink.table.api.Expressions.$;
 
 /**
  * 实际案例--根据商户经纬度给匹配用户发券
  * 应用窗口（为了解决获取count重复问题，并且能知道何时送数结束）
+ * 使用函数决定
  *
  * author:xuyaokun_kzx
  * date:2022/2/10
  * desc:
 */
-public class UserCouponMatchingTask2 {
+public class UserCouponMatchingTask3 {
 
-    private final static Logger LOGGER = LoggerFactory.getLogger(UserCouponMatchingTask2.class);
+    private final static Logger LOGGER = LoggerFactory.getLogger(UserCouponMatchingTask3.class);
 
     public static void main(String[] args) throws Exception {
 
@@ -123,11 +128,12 @@ public class UserCouponMatchingTask2 {
         // 注册函数
         tableEnv.createTemporarySystemFunction("lat", LatFunction.class);
         tableEnv.createTemporarySystemFunction("lng", LngFunction.class);
+        tableEnv.createTemporarySystemFunction("curMinute", CurrentMinute.class);
 
         //模拟表名：user_location_partition
         //在这里需要将要用到的列筛选出来
-        String queryHiveSql = "SELECT cert_type, cert_nbr, lat, lng, work_day, destination, partstart "
-                + " FROM user_location_partition "
+        String queryHiveSql = "SELECT cert_type, cert_nbr, lat, lng, lat_night, lng_night, work_day, destination, partstart "
+                + " FROM user_location_partition_info "
                 + " WHERE partstart='20220210'" //带上分区信息(注意，这里的分区值必须用引号括起来)
                 ;
         Table hiveTable = tableEnv.sqlQuery(queryHiveSql);
@@ -225,25 +231,25 @@ public class UserCouponMatchingTask2 {
                         "FROM " + joinResTable +
                         " where ROUND(6378.138 * 2 * ASIN(SQRT(\n" +
                         "POWER(SIN((CAST(storeLatitude as double) * PI() / 180 - CAST(" +
-                        "CASE lat()\n" +
-                        "WHEN 0 THEN lat\n" +
-                        "WHEN 1 THEN lat\n" +
-                        "ELSE lat \n" +
-                        "END " +
+                        "(CASE lat(date_format(current_timestamp, 'yyyy-MM-dd HH:mm:ss'))\n" +
+                        "WHEN '0' THEN lat\n" +
+                        "WHEN '1' THEN lat_night\n" +
+                        "ELSE lat_night \n" +
+                        "END) " +
                         " as double) * PI() / 180) / 2), 2)\n" +
                         "+ COS(CAST(storeLatitude as double) * PI() / 180) * COS(CAST(" +
-                        "CASE lat()\n" +
-                        "WHEN 0 THEN lat\n" +
-                        "WHEN 1 THEN lat\n" +
-                        "ELSE lat \n" +
-                        "END " +
+                        "(CASE lat(date_format(current_timestamp, 'yyyy-MM-dd HH:mm:ss'))\n" +
+                        "WHEN '0' THEN lat\n" +
+                        "WHEN '1' THEN lat_night\n" +
+                        "ELSE lat_night \n" +
+                        "END) " +
                         " as double) * PI() / 180) * \n" +
                         "POWER(SIN((CAST(storeLongitude as double) * PI() / 180 - CAST(" +
-                        "CASE lng()\n" +
-                        "WHEN 0 THEN lng\n" +
-                        "WHEN 1 THEN lng\n" +
-                        "ELSE lng \n" +
-                        "END " +
+                        "(CASE lng(date_format(current_timestamp, 'yyyy-MM-dd HH:mm:ss'))\n" +
+                        "WHEN '0' THEN lng\n" +
+                        "WHEN '1' THEN lng_night\n" +
+                        "ELSE lng_night \n" +
+                        "END) " +
                         " as double) * PI() / 180) / 2), 2)\n" +
                         ")) * 1000) < storeRange limit 10000"  //limit的取值如何动态变？
 //                        + " and " +
@@ -285,21 +291,45 @@ public class UserCouponMatchingTask2 {
         env.execute();
     }
 
+    public static class CurrentMinute extends ScalarFunction {
+
+        public String eval(String dateString) {
+
+            //模拟，分钟数是偶数，返回0，奇数返回1
+            String mm = DateUtils.toStr(new Date(), "mm");
+            return mm;
+        }
+
+    }
+
     public static class LatFunction extends ScalarFunction {
 
-        public String eval() {
-            return "lat";
+        public String eval(String dateString) {
+
+            return matchTimePeriod(dateString);
         }
 
     }
 
     public static class LngFunction extends ScalarFunction {
 
-        public String eval() {
-            return "lng";
-        }
+        public String eval(String dateString) {
 
+            return matchTimePeriod(dateString);
+        }
     }
 
+    private static String matchTimePeriod(String dateString){
+
+//        return Integer.parseInt(dateString) % 2 == 0 ? "0" : "1";
+
+        Date date = DateUtils.toDate(dateString, PATTERN_YYYY_MM_DD_HH_MM_SS);
+
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(date);
+
+        int minute = calendar.get(Calendar.MINUTE);
+        return minute % 2 == 0 ? "0" : "1";
+    }
 
 }
