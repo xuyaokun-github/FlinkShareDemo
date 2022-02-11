@@ -47,6 +47,7 @@ public class HiveInfoDao {
         tableEnv.useCatalog(catalogName);
         tableEnv.useDatabase(database);
 
+        tableEnv.getConfig().getConfiguration().setString("table.dynamic-table-options.enabled", "true");
     }
 
     /**

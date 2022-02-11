@@ -1,0 +1,50 @@
+CREATE TABLE `test.people_partition2`(
+  `id` int,
+  `name` string,
+  `work_day` date,
+  `destination` string)
+COMMENT 'This is a test table'
+PARTITIONED by (`partstart` string) TBLPROPERTIES (
+  'streaming-source.enable' = 'true',
+  'streaming-source.partition.include' = 'latest',
+  'streaming-source.monitor-interval' = '12 h',
+  'streaming-source.partition-order' = 'partition-name'
+)
+ROW FORMAT DELIMITED FIELDS TERMINATED BY '\001'
+LINES  TERMINATED BY '\n';
+
+INSERT overwrite TABLE test.people_partition2 PARTITION (
+partstart = 20220208 )
+SELECT id, name, work_day, destination
+FROM test.workerday;
+
+INSERT overwrite TABLE test.people_partition2 PARTITION (
+partstart = 20220207 )
+SELECT id, name, work_day, destination
+FROM test.workerday;
+
+下面这种情况使用分区查询会阻塞
+SET table.sql-dialect=default;
+CREATE TABLE `test.people_partition3`(
+  `id` int,
+  `name` string,
+  `work_day` date,
+  `destination` string)
+COMMENT 'This is a test table'
+PARTITIONED by (`partstart` string) TBLPROPERTIES (
+  'streaming-source.enable' = 'true',
+  'streaming-source.partition.include' = 'all',
+  'streaming-source.monitor-interval' = '12 h',
+  'streaming-source.partition-order' = 'partition-name'
+)
+
+不指定表属性，就不会阻塞
+CREATE TABLE `test.people_partition4`(
+  `id` int,
+  `name` string,
+  `work_day` date,
+  `destination` string)
+COMMENT 'This is a test table'
+PARTITIONED by (`partstart` string)
+ROW FORMAT DELIMITED FIELDS TERMINATED BY '\001'
+LINES  TERMINATED BY '\n';
