@@ -5,12 +5,18 @@ import com.kunghsu.common.utils.JacksonUtils;
 import com.kunghsu.example.coupon.function.CurrentMinute;
 import com.kunghsu.example.coupon.function.LatFunction;
 import com.kunghsu.example.coupon.function.LngFunction;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
+import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
+import org.apache.flink.streaming.api.windowing.assigners.ProcessingTimeSessionWindows;
+import org.apache.flink.streaming.api.windowing.time.Time;
+import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
 import org.apache.flink.table.api.EnvironmentSettings;
@@ -19,10 +25,12 @@ import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.table.catalog.hive.HiveCatalog;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.Collector;
-import org.apache.flink.util.OutputTag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.UUID;
 
 import static org.apache.flink.table.api.Expressions.$;
@@ -30,15 +38,22 @@ import static org.apache.flink.table.api.Expressions.$;
 /**
  * 实际案例--根据商户经纬度给匹配用户发券
  * 应用窗口（为了解决获取count重复问题，并且能知道何时送数结束）
- * 使用函数决定
+ * 使用函数决定列名
+ * 不用分流，使用双重join保证筛数为0时也有流数据产生
+ *
+ * 遇到一个小问题，假如同一个kafka消息，多次进入系统，会导致笛卡尔积的结果越来越大
+ * 所以这里需要做一个排重处理
+ * 两种方法：
+ * 1.在窗口聚合里排重
+ * 2.给kafka消息补上一个唯一ID
  *
  * author:xuyaokun_kzx
  * date:2022/2/10
  * desc:
 */
-public class UserCouponMatchingTask3 {
+public class UserCouponMatchingTask4 {
 
-    private final static Logger LOGGER = LoggerFactory.getLogger(UserCouponMatchingTask3.class);
+    private final static Logger LOGGER = LoggerFactory.getLogger(UserCouponMatchingTask4.class);
 
     public static void main(String[] args) throws Exception {
 
@@ -67,47 +82,24 @@ public class UserCouponMatchingTask3 {
                 couponInputTableVO.setStoreLatitude(value.getSTORE_LATITUDE());
                 couponInputTableVO.setStoreLongitude(value.getSTORE_LONGITUDE());
                 couponInputTableVO.setUserNum(value.getUSER_NUM());
+                couponInputTableVO.setUniqueReqId(value.getUNIQUE_REQ_ID());
                 System.out.println("分流前转换得到内容：" + JacksonUtils.toJSONString(couponInputTableVO));
                 return couponInputTableVO;
             }
         });
 
-        //开始分流，按照消息类型分流
-        OutputTag<CouponInputTableVO> itemTypeTag = new OutputTag<CouponInputTableVO>("itemType") {};
-        OutputTag<CouponInputTableVO> itemTypeTag2 = new OutputTag<CouponInputTableVO>("itemType2") {};
-        OutputTag<CouponInputTableVO> countTypeTag = new OutputTag<CouponInputTableVO>("countType") {};
-
-        SingleOutputStreamOperator<CouponInputTableVO> splitStream = stream2.process(new ProcessFunction<CouponInputTableVO, CouponInputTableVO>() {
-            @Override
-            public void processElement(CouponInputTableVO value, Context context, Collector<CouponInputTableVO> out) throws Exception {
-                if ("01".equals(value.getMessageType())) {
-                    context.output(itemTypeTag, value);
-                    context.output(itemTypeTag2, value);
-                } else if ("02".equals(value.getMessageType())) {
-                    context.output(countTypeTag, value);
-                }
-            }
-        });
-
-        //得到划分后的流
-        //消息类型01对应的流
-        DataStream<CouponInputTableVO> itemTypeStream = splitStream.getSideOutput(itemTypeTag);
-//        itemTypeStream.print();
-        DataStream<CouponInputTableVO> itemTypeStream2 = splitStream.getSideOutput(itemTypeTag2);
-
-        //消息类型02对应的流
-        DataStream<CouponInputTableVO> countTypeStream = splitStream.getSideOutput(countTypeTag);
-//        countTypeStream.print();
-
         //针对01类型的处理
         //通过流得到kafka table
         //将流转成表
-        Table inputTable = tableEnv.fromDataStream(itemTypeStream, $("couponId"), $("storeId"),
+        Table inputTable = tableEnv.fromDataStream(stream2, $("couponId"), $("storeId"),
                 $("storeRange"), $("storeLongitude"), $("storeLatitude"),
-                $("userNum"));
-        Table inputTable2 = tableEnv.fromDataStream(itemTypeStream2, $("couponId"), $("storeId"),
+                $("userNum"), $("uniqueReqId"));
+        Table inputTable2 = tableEnv.fromDataStream(stream2, $("couponId"), $("storeId"),
                 $("storeRange"), $("storeLongitude"), $("storeLatitude"),
-                $("userNum"));
+                $("userNum"), $("uniqueReqId"));
+//        Table inputTable2 = tableEnv.fromDataStream(stream2, $("couponId"), $("storeId"),
+//                $("storeRange"), $("storeLongitude"), $("storeLatitude"),
+//                $("userNum"));
         //获取hive的表
         //hive相关属性
         //定义一个唯一的名称，这个值是可以随意定义的
@@ -142,90 +134,15 @@ public class UserCouponMatchingTask3 {
 //        DataStream<Tuple2<Boolean, Row>> retractStream = tableEnv.toRetractStream(joinResTable, Row.class);
 //        retractStream.print();
 
-//        boolean queryCount = true;
-        boolean queryCount = false;
-        if (queryCount){
-            Table hiveTable2 = tableEnv.sqlQuery(queryHiveSql);
-            Table joinResTable2 = inputTable2.join(hiveTable2);
-
-            Table countResultTable = joinResTable2
-                    .select($("couponId"), $("storeId"), $("storeRange"), $("userNum"))
-                    .where(" ROUND(6378.138 * 2 * ASIN(SQRT(\n" +
-                            "POWER(SIN((CAST(storeLatitude as double) * PI() / 180 - CAST(lat as double) * PI() / 180) / 2), 2)\n" +
-                            "+ COS(CAST(storeLatitude as double) * PI() / 180) * COS(CAST(lat as double) * PI() / 180) * \n" +
-                            "POWER(SIN((CAST(storeLongitude as double) * PI() / 180 - CAST(lng as double) * PI() / 180) / 2), 2)\n" +
-                            ")) * 1000) < storeRange")
-                    .limit(10000)
-                    .groupBy($("couponId"), $("storeId"), $("storeRange"), $("userNum"))
-                    .select($("couponId"), $("storeId"), $("storeRange"), $("userNum"), $("couponId").count().as("cnt"));
-
-            //针对连接后的表进行查询
-            //查总数（查完总数，假如hive里的数据仍会动态变，就会导致数据不准，例如一开始查出总数是100，数据增量进来，给101个用户发了券）
-        /*
-            distinct
-            为什么会查出多条记录？重新创建table出来join也一样查出多条记录，这个group by怎么会查出多条记录呢？
-         */
-//            Table countResultTable = tableEnv.sqlQuery(
-//                    "SELECT  t.couponId, t.storeId, t.storeRange, t.userNum, count(1) as userCount from (" +
-//                            "SELECT couponId, storeId, storeRange, userNum " +
-//                            "FROM " + joinResTable2 +
-//                            " where ROUND(6378.138 * 2 * ASIN(SQRT(\n" +
-//                            "POWER(SIN((CAST(storeLatitude as double) * PI() / 180 - CAST(lat as double) * PI() / 180) / 2), 2)\n" +
-//                            "+ COS(CAST(storeLatitude as double) * PI() / 180) * COS(CAST(lat as double) * PI() / 180) * \n" +
-//                            "POWER(SIN((CAST(storeLongitude as double) * PI() / 180 - CAST(lng as double) * PI() / 180) / 2), 2)\n" +
-//                            ")) * 1000) < storeRange limit 10000" +
-//                            ") t group by t.couponId, t.storeId, t.storeRange, t.userNum"
-//            );
-
-            //下面这条SQL不可取
-//            Table countResultTable = tableEnv.sqlQuery(
-//                    "SELECT  count(1) as userCount from (" +
-//                            "SELECT couponId, storeId, storeRange, userNum " +
-//                            "FROM " + joinResTable2 +
-//                            " where ROUND(6378.138 * 2 * ASIN(SQRT(\n" +
-//                            "POWER(SIN((CAST(storeLatitude as double) * PI() / 180 - CAST(lat as double) * PI() / 180) / 2), 2)\n" +
-//                            "+ COS(CAST(storeLatitude as double) * PI() / 180) * COS(CAST(lat as double) * PI() / 180) * \n" +
-//                            "POWER(SIN((CAST(storeLongitude as double) * PI() / 180 - CAST(lng as double) * PI() / 180) / 2), 2)\n" +
-//                            ")) * 1000) < storeRange limit 10000" +
-//                            ") t "
-//            );
-            DataStream<Tuple2<Boolean, Row>> countResultStream = tableEnv.toRetractStream(countResultTable, Row.class);
-            countResultStream.print();
-
-            SingleOutputStreamOperator<CouponOutputMsg> countResultOutputStream = countResultStream.map(new MapFunction<Tuple2<Boolean, Row>, CouponOutputMsg>() {
-                @Override
-                public CouponOutputMsg map(Tuple2<Boolean, Row> booleanRowTuple2) throws Exception {
-
-                    //cert_type, cert_nbr, couponId, storeId, storeRange, userNum
-                    String rowToString = booleanRowTuple2.f1.toString();
-                    //输出结果：rowToString: 4,44444,347caf17-7f6d-41b7-9ba5-b3b1f49f5ea6,888999,500,null  并不是按照json输出
-                    System.out.println("count rowToString: " + rowToString);
-                    CouponOutputMsg couponOutputMsg = new CouponOutputMsg();
-                    couponOutputMsg.setMESSAGE_TYPE("01");
-                    couponOutputMsg.setSERIAL_NO(UUID.randomUUID().toString());
-//                couponOutputMsg.setCOUPON_ID((String) booleanRowTuple2.f1.getField(0));
-//                couponOutputMsg.setSTORE_ID((String) booleanRowTuple2.f1.getField(1));
-//                couponOutputMsg.setSTORE_RANGE((String) booleanRowTuple2.f1.getField(2));
-//                //实际筛选客户总数
-//                couponOutputMsg.setCOUPON_SEND_NUM(String.valueOf(booleanRowTuple2.f1.getField(4)));
-
-//                couponOutputMsg.setCOUPON_ID((String) booleanRowTuple2.f1.getField(0));
-//                couponOutputMsg.setSTORE_ID((String) booleanRowTuple2.f1.getField(1));
-//                couponOutputMsg.setSTORE_RANGE((String) booleanRowTuple2.f1.getField(2));
-//                //实际筛选客户总数
-                    couponOutputMsg.setCOUPON_SEND_NUM(String.valueOf(booleanRowTuple2.f1.getField(0)));
-                    return couponOutputMsg;
-                }
-            });
-//        countResultOutputStream.print();
-        }
-
-
         //执行经纬度比较SQL
         //查出所有符合条件的行(多行)
         //列名的选择需要根据时间段动态变！自定义一个函数，提供这个列名
         Table itemResultTable = tableEnv.sqlQuery(
-                "SELECT cert_type, cert_nbr, couponId, storeId, storeRange, userNum " +
+
+                "select  t.cert_type, t.cert_nbr, a.couponId, a.storeId, a.storeRange, a.userNum, a.uniqueReqId  " +
+                "from " + inputTable2 + " a left join " +
+                "( " +
+                "SELECT cert_type, cert_nbr, couponId, storeId, storeRange, userNum, uniqueReqId " +
                         "FROM " + joinResTable +
                         " where ROUND(6378.138 * 2 * ASIN(SQRT(\n" +
                         "POWER(SIN((CAST(storeLatitude as double) * PI() / 180 - CAST(" +
@@ -249,7 +166,12 @@ public class UserCouponMatchingTask3 {
                         "ELSE lng_night \n" +
                         "END) " +
                         " as double) * PI() / 180) / 2), 2)\n" +
-                        ")) * 1000) < storeRange limit 10000"  //limit的取值如何动态变？
+                        ")) * 1000) < storeRange limit 10000" +
+                        ") t on a.couponId=t.couponId and " +
+                "a.storeId=t.storeId and " +
+                "a.storeRange=t.storeRange and " +
+                "a.userNum=t.userNum and " +
+                        "a.uniqueReqId = t.uniqueReqId"
 //                        + " and " +
 //                        " partstart='20220210'"
         );
@@ -268,7 +190,6 @@ public class UserCouponMatchingTask3 {
                 //输出结果：rowToString: 4,44444,347caf17-7f6d-41b7-9ba5-b3b1f49f5ea6,888999,500,null  并不是按照json输出
 //                System.out.println("rowToString: " + rowToString);
                 CouponOutputMsg couponOutputMsg = new CouponOutputMsg();
-                couponOutputMsg.setMESSAGE_TYPE("02");
                 couponOutputMsg.setSERIAL_NO(UUID.randomUUID().toString());
                 couponOutputMsg.setID_TYPE((String) booleanRowTuple2.f1.getField(0));
                 couponOutputMsg.setID_NUMBER((String) booleanRowTuple2.f1.getField(1));
@@ -276,10 +197,73 @@ public class UserCouponMatchingTask3 {
                 couponOutputMsg.setSTORE_ID((String) booleanRowTuple2.f1.getField(3));
                 couponOutputMsg.setSTORE_RANGE((String) booleanRowTuple2.f1.getField(4));
                 couponOutputMsg.setCOUPON_SEND_NUM((String) booleanRowTuple2.f1.getField(5));
+                couponOutputMsg.setUNIQUE_REQ_ID((String) booleanRowTuple2.f1.getField(6));
+//                System.out.println("得到的CouponOutputMsg:" + JacksonUtils.toJSONString(couponOutputMsg));
                 return couponOutputMsg;
             }
         });
-        itemResultOutputStream.print("itemResultOutputStream");
+//        itemResultOutputStream.print("itemResultOutputStream");
+
+        SingleOutputStreamOperator<ResultWrapVO> itemResultOutputStream2 = itemResultOutputStream.keyBy(new KeySelector<CouponOutputMsg, String>() {
+            @Override
+            public String getKey(CouponOutputMsg couponOutputMsg) throws Exception {
+
+                return StringUtils.join(new String[]{
+                        couponOutputMsg.getCOUPON_ID(),
+                        couponOutputMsg.getSTORE_ID(),
+                        couponOutputMsg.getSTORE_RANGE(),
+                        couponOutputMsg.getCOUPON_SEND_NUM(),
+                        couponOutputMsg.getUNIQUE_REQ_ID(),
+                }, "_");
+            }
+        }).window(ProcessingTimeSessionWindows.withGap(Time.seconds(1)))
+                .apply(new WindowFunction<CouponOutputMsg, ResultWrapVO, String, TimeWindow>() {
+                    @Override
+                    public void apply(String s, TimeWindow window, Iterable<CouponOutputMsg> input, Collector<ResultWrapVO> out) throws Exception {
+
+                        ResultWrapVO resultWrapVO = new ResultWrapVO();
+                        Iterator iterator = input.iterator();
+                        List<CouponOutputMsg> itemList = new ArrayList<>();
+                        while (iterator.hasNext()){
+                            CouponOutputMsg couponOutputMsg = (CouponOutputMsg) iterator.next();
+                            if (StringUtils.isNotEmpty(couponOutputMsg.getID_TYPE()) && StringUtils.isNotEmpty(couponOutputMsg.getID_NUMBER())){
+                                itemList.add(couponOutputMsg);
+                            }
+                        }
+                        resultWrapVO.setItemList(itemList);
+                        out.collect(resultWrapVO);
+                    }
+                });
+
+        SingleOutputStreamOperator<CouponOutputMsg> itemResultOutputStream3 = itemResultOutputStream2.process(new ProcessFunction<ResultWrapVO, CouponOutputMsg>() {
+            @Override
+            public void processElement(ResultWrapVO value, Context ctx, Collector<CouponOutputMsg> out) throws Exception {
+                List<CouponOutputMsg> itemList = value.getItemList();
+                if (itemList.size() > 0){
+                    CouponOutputMsg outputMsg = new CouponOutputMsg();
+                    outputMsg.setMESSAGE_TYPE("01");
+                    outputMsg.setCOUPON_SEND_NUM(String.valueOf(itemList.size()));
+                    out.collect(outputMsg);
+                    itemList.forEach(item->{
+                        item.setMESSAGE_TYPE("02");
+                        item.setCOUPON_SEND_NUM(String.valueOf(itemList.size()));
+                        out.collect(item);
+                    });
+                    CouponOutputMsg outputMsg3 = new CouponOutputMsg();
+                    outputMsg3.setMESSAGE_TYPE("03");
+                    outputMsg3.setCOUPON_SEND_NUM(String.valueOf(itemList.size()));
+                    out.collect(outputMsg3);
+                }else {
+                    CouponOutputMsg outputMsg = new CouponOutputMsg();
+                    outputMsg.setMESSAGE_TYPE("01");
+                    outputMsg.setCOUPON_SEND_NUM("0");
+                    out.collect(outputMsg);
+
+                }
+
+            }
+        });
+        itemResultOutputStream3.print("itemResultOutputStream3");
 
         //输出源
         FlinkKafkaProducer flinkKafkaProducer = FlinkKafkaConfig.getFlinkKafkaProducer("coupon-output");
@@ -289,45 +273,18 @@ public class UserCouponMatchingTask3 {
         env.execute();
     }
 
-//    public static class CurrentMinute extends ScalarFunction {
-//
-//        public String eval(String dateString) {
-//
-//            //模拟，分钟数是偶数，返回0，奇数返回1
-//            String mm = DateUtils.toStr(new Date(), "mm");
-//            return mm;
-//        }
-//
-//    }
+    static class ResultWrapVO {
 
-//    public static class LatFunction extends ScalarFunction {
-//
-//        public String eval(String dateString) {
-//
-//            return matchTimePeriod(dateString);
-//        }
-//
-//    }
-//
-//    public static class LngFunction extends ScalarFunction {
-//
-//        public String eval(String dateString) {
-//
-//            return matchTimePeriod(dateString);
-//        }
-//    }
-//
-//    private static String matchTimePeriod(String dateString){
-//
-////        return Integer.parseInt(dateString) % 2 == 0 ? "0" : "1";
-//
-//        Date date = DateUtils.toDate(dateString, PATTERN_YYYY_MM_DD_HH_MM_SS);
-//
-//        Calendar calendar = Calendar.getInstance();
-//        calendar.setTime(date);
-//
-//        int minute = calendar.get(Calendar.MINUTE);
-//        return minute % 2 == 0 ? "0" : "1";
-//    }
+        private List<CouponOutputMsg> itemList;
+
+        public List<CouponOutputMsg> getItemList() {
+            return itemList;
+        }
+
+        public void setItemList(List<CouponOutputMsg> itemList) {
+            this.itemList = itemList;
+        }
+    }
+
 
 }

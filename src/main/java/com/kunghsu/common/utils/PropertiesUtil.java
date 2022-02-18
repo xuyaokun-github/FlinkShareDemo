@@ -2,9 +2,8 @@ package com.kunghsu.common.utils;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.io.support.PropertiesLoaderUtils;
 
-import java.io.IOException;
+import java.io.InputStream;
 import java.util.Properties;
 
 /**
@@ -24,8 +23,11 @@ public class PropertiesUtil {
 
     static {
         try {
-            properties = PropertiesLoaderUtils.loadAllProperties(DEFAULT_PROPERTIES_NAME);
-        } catch (IOException e) {
+            InputStream inputStream = PropertiesUtil.class.getResourceAsStream(DEFAULT_PROPERTIES_NAME);
+//            properties = PropertiesLoaderUtils.loadAllProperties(DEFAULT_PROPERTIES_NAME);
+            properties = new Properties();
+            properties.load(inputStream);
+        } catch (Exception e) {
             LOGGER.error("加载配置文件异常", e);
         }
     }
@@ -49,9 +51,9 @@ public class PropertiesUtil {
         String value = null;
         Properties properties = null;
         try {
-            properties = PropertiesLoaderUtils.loadAllProperties(propertyPath);
+//            properties = PropertiesLoaderUtils.loadAllProperties(propertyPath);
             value = properties.getProperty(key, defaultValue);
-        } catch (IOException e) {
+        } catch (Exception e) {
             LOGGER.error("加载配置文件异常", e);
         }
         return value;

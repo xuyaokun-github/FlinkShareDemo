@@ -9,6 +9,7 @@ public class CouponInputMsg {
     private String USER_NUM;
     private String MESSAGE_TYPE;
     private String STORE_ID;
+    private String UNIQUE_REQ_ID;
 
     public String getCOUPON_ID() {
         return COUPON_ID;
@@ -64,5 +65,13 @@ public class CouponInputMsg {
 
     public void setSTORE_ID(String STORE_ID) {
         this.STORE_ID = STORE_ID;
+    }
+
+    public String getUNIQUE_REQ_ID() {
+        return UNIQUE_REQ_ID;
+    }
+
+    public void setUNIQUE_REQ_ID(String UNIQUE_REQ_ID) {
+        this.UNIQUE_REQ_ID = UNIQUE_REQ_ID;
     }
 }

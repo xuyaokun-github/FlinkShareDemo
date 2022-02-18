@@ -16,6 +16,8 @@ public class CouponOutputMsg {
     private String ID_NUMBER;
     private String STORE_ID;
     private String STORE_RANGE;
+    private String UNIQUE_REQ_ID;
+
 
     public String getCOUPON_ID() {
         return COUPON_ID;
@@ -79,6 +81,14 @@ public class CouponOutputMsg {
 
     public void setSTORE_RANGE(String STORE_RANGE) {
         this.STORE_RANGE = STORE_RANGE;
+    }
+
+    public String getUNIQUE_REQ_ID() {
+        return UNIQUE_REQ_ID;
+    }
+
+    public void setUNIQUE_REQ_ID(String UNIQUE_REQ_ID) {
+        this.UNIQUE_REQ_ID = UNIQUE_REQ_ID;
     }
 
     @Override

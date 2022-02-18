@@ -9,6 +9,7 @@ public class CouponInputTableVO {
     private String userNum;
     private String messageType;
     private String storeId;
+    private String uniqueReqId;
 
     public String getCouponId() {
         return couponId;
@@ -66,6 +67,14 @@ public class CouponInputTableVO {
         this.storeId = storeId;
     }
 
+    public String getUniqueReqId() {
+        return uniqueReqId;
+    }
+
+    public void setUniqueReqId(String uniqueReqId) {
+        this.uniqueReqId = uniqueReqId;
+    }
+
     @Override
     public String toString() {
         return "CouponInputTableVO{" +
@@ -76,6 +85,7 @@ public class CouponInputTableVO {
                 ", userNum='" + userNum + '\'' +
                 ", messageType='" + messageType + '\'' +
                 ", storeId='" + storeId + '\'' +
+                ", uniqueReqId='" + uniqueReqId + '\'' +
                 '}';
     }
 }
