@@ -2,7 +2,7 @@ package com.kunghsu.apache.flink.flinkkafka.task;
 
 import com.kunghsu.common.utils.JacksonUtils;
 import com.kunghsu.example.coupon.CouponInputMsg;
-import com.kunghsu.example.coupon.CouponInputTableVO;
+import com.kunghsu.example.coupon.table.CouponInputTableVO;
 import com.kunghsu.example.coupon.KafkaConsumerProducerConfig;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.streaming.api.datastream.DataStream;

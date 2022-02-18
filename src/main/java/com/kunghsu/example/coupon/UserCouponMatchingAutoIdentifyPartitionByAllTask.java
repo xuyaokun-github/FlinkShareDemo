@@ -50,14 +50,15 @@ import static org.apache.flink.table.api.Expressions.$;
  *
  * 研究自动识别分区
  * 简单在查询SQL中加latest不奏效
+ * 尝试在建表时指定分区，看能否自动识别,all亲测成功
  *
  * author:xuyaokun_kzx
- * date:2022/2/10
+ * date:2022/2/17
  * desc:
 */
-public class UserCouponMatchingTask5 {
+public class UserCouponMatchingAutoIdentifyPartitionByAllTask {
 
-    private final static Logger LOGGER = LoggerFactory.getLogger(UserCouponMatchingTask5.class);
+    private final static Logger LOGGER = LoggerFactory.getLogger(UserCouponMatchingAutoIdentifyPartitionByAllTask.class);
 
     public static void main(String[] args) throws Exception {
 
@@ -131,29 +132,16 @@ public class UserCouponMatchingTask5 {
             Exception in thread "main" java.lang.IllegalArgumentException: The only supported 'streaming-source.partition.include' is 'all' in hive table scan, but is 'latest'
         */
         String queryHiveSql = "SELECT cert_type, cert_nbr, lat, lng, lat_night, lng_night, work_day, destination, partstart "
-                + " FROM user_location_partition_info "
+                + " FROM user_location_partition_info_temporal "
 //                + "/*+ OPTIONS('streaming-source.enable'='true', 'streaming-source.partition.include' = 'latest') */"
 //                + " WHERE partstart='20220210'" //带上分区信息(注意，这里的分区值必须用引号括起来)
                 ;
         Table hiveTable = tableEnv.sqlQuery(queryHiveSql);
 
         /*
-            streaming-source.partition.include 写在这里是没有用的
          */
         //两个表进行连接join
-//        Table joinResTable = inputTable.join(hiveTable);
-        Table joinResTable = tableEnv.sqlQuery("select a.*,b.* " +
-                "from " + inputTable + " a join " + hiveTable +
-                "/*+ OPTIONS('streaming-source.enable'='true', 'streaming-source.partition.include' = 'latestKKK'" +
-                ", 'streaming-source.partition-order' = 'partition-name', 'streaming-source.monitor-interval' = '10 s'" +
-                ") */"  +
-                " b "
-                + "on a.couponId=b.lat"
-        );
-
-        //调试，查看表连接之后的内容
-//        DataStream<Tuple2<Boolean, Row>> retractStream = tableEnv.toRetractStream(joinResTable, Row.class);
-//        retractStream.print();
+        Table joinResTable = inputTable.join(hiveTable);
 
         //执行经纬度比较SQL
         //查出所有符合条件的行(多行)
@@ -168,9 +156,9 @@ public class UserCouponMatchingTask5 {
                 "SELECT cert_type, cert_nbr, couponId, storeId, storeRange, userNum, uniqueReqId " +
                         "FROM " + joinResTable
                         +
-                        " /*+ OPTIONS('streaming-source.enable'='true', 'streaming-source.partition.include' = 'latestKKK'" +
-                        ", 'streaming-source.partition-order' = 'partition-name', 'streaming-source.monitor-interval' = '10 s'" +
-                        ") */"  +
+//                        " /*+ OPTIONS('streaming-source.enable'='true', 'streaming-source.partition.include' = 'latestKKK'" +
+//                        ", 'streaming-source.partition-order' = 'partition-name', 'streaming-source.monitor-interval' = '10 s'" +
+//                        ") */"  +
 
                         " where ROUND(6378.138 * 2 * ASIN(SQRT(\n" +
                         "POWER(SIN((CAST(storeLatitude as double) * PI() / 180 - CAST(" +
@@ -204,9 +192,15 @@ public class UserCouponMatchingTask5 {
 //                        " partstart='20220210'"
         );
 
+        /*
+            建表语句中加了latest，在将表转成流的时候，报错：
+            Exception in thread "main" java.lang.IllegalArgumentException:
+            The only supported 'streaming-source.partition.include' is 'all' in hive table scan, but is 'latest'
+         */
 
         //表转成流
         DataStream<Tuple2<Boolean, Row>> itemResultStream = tableEnv.toRetractStream(itemResultTable, Row.class);
+//        itemResultStream.print();
 
         //结果的处理,转换成kafka输出格式
         SingleOutputStreamOperator<CouponOutputMsg> itemResultOutputStream = itemResultStream.map(new MapFunction<Tuple2<Boolean, Row>, CouponOutputMsg>() {
@@ -244,7 +238,7 @@ public class UserCouponMatchingTask5 {
                         couponOutputMsg.getUNIQUE_REQ_ID(),
                 }, "_");
             }
-        }).window(ProcessingTimeSessionWindows.withGap(Time.seconds(1)))
+        }).window(ProcessingTimeSessionWindows.withGap(Time.seconds(2)))
                 .apply(new WindowFunction<CouponOutputMsg, ResultWrapVO, String, TimeWindow>() {
                     @Override
                     public void apply(String s, TimeWindow window, Iterable<CouponOutputMsg> input, Collector<ResultWrapVO> out) throws Exception {
@@ -297,7 +291,7 @@ public class UserCouponMatchingTask5 {
         FlinkKafkaProducer flinkKafkaProducer = FlinkKafkaConfig.getFlinkKafkaProducer("coupon-output");
 //        itemResultOutputStream.addSink(flinkKafkaProducer);
 
-        System.out.println("开始执行UserCouponMatchingTask");
+        System.out.println("开始执行UserCouponMatchingTask6");
         env.execute();
     }
 

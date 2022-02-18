@@ -2,6 +2,7 @@ package com.kunghsu.example.coupon;
 
 import com.kunghsu.apache.flink.flinkkafka.config.FlinkKafkaConfig;
 import com.kunghsu.common.utils.JacksonUtils;
+import com.kunghsu.example.coupon.table.CouponInputTableVO;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.streaming.api.datastream.DataStream;

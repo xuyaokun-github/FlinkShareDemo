@@ -1,6 +1,8 @@
-package com.kunghsu.example.coupon;
+package com.kunghsu.example.coupon.table;
 
-public class CouponInputTableVO {
+import java.util.Date;
+
+public class CouponInputTableVO2 {
 
     private String couponId;
     private String storeRange;
@@ -10,6 +12,8 @@ public class CouponInputTableVO {
     private String messageType;
     private String storeId;
     private String uniqueReqId;
+    private Date createTime;
+    private String type = "6";//证件类型
 
     public String getCouponId() {
         return couponId;
@@ -73,6 +77,22 @@ public class CouponInputTableVO {
 
     public void setUniqueReqId(String uniqueReqId) {
         this.uniqueReqId = uniqueReqId;
+    }
+
+    public Date getCreateTime() {
+        return createTime;
+    }
+
+    public void setCreateTime(Date createTime) {
+        this.createTime = createTime;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
     }
 
     @Override
