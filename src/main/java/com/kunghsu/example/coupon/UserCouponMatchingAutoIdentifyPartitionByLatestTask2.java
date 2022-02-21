@@ -93,16 +93,12 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
             }
         });
 
-        //针对01类型的处理
-        //通过流得到kafka table
-        //将流转成表
+        //通过流得到kafka table，将流转成表
         Table inputTable = tableEnv.fromDataStream(stream2, $("couponId"), $("storeId"),
                 $("storeRange"), $("storeLongitude"), $("storeLatitude"),
                 $("userNum"), $("uniqueReqId"), $("type"),
                 $("proctime").proctime());
-//        Table inputTable2 = tableEnv.fromDataStream(stream2, $("couponId"), $("storeId"),
-//                $("storeRange"), $("storeLongitude"), $("storeLatitude"),
-//                $("userNum"));
+
         //获取hive的表
         //hive相关属性
         //定义一个唯一的名称，这个值是可以随意定义的
@@ -136,8 +132,6 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
                 + "/*+ OPTIONS('streaming-source.enable'='true', 'streaming-source.partition.include' = 'latest'" +
                 ", 'streaming-source.partition-order' = 'create-time', 'streaming-source.monitor-interval' = '20 s'" +
                 ") */"
-//                +
-//                + " WHERE partstart='20220210'" //带上分区信息(注意，这里的分区值必须用引号括起来)
                 ;
         Table hiveTable = tableEnv.sqlQuery(queryHiveSql);
 
@@ -147,8 +141,13 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
             The only supported 'streaming-source.partition.include' is 'all' in hive table scan, but is 'latest'
          */
         //两个表进行连接join(单join会报错The only supported 'streaming-source.partition.include' is 'all' in hive table scan, but is 'latest')
-        //因为join的时候没法同时通过API指定SYSTEM_TIME
+        //因为join的时候没法同时通过API指定SYSTEM_TIME，这种写法不能成功
 //        Table joinResTable = inputTable.join(hiveTable);
+
+        /*
+            OPTIONS放在join的时候，不奏效！！
+            必须得放在首次查hive表时
+         */
         Table joinResTable = tableEnv.sqlQuery("select a.*,b.* " +
                 "from " + inputTable + " AS a join " + hiveTable
 //                + " /*+ OPTIONS('streaming-source.enable'='true', 'streaming-source.partition.include' = 'latest'" +
@@ -156,7 +155,10 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
 //                ") */"
                 + " FOR SYSTEM_TIME AS OF a.proctime AS b " //
 //                "  AS b " //不指定SYSTEM_TIME，是错误的
-                        + "on b.cert_type = a.type "
+//                        + " /*+ OPTIONS('streaming-source.enable'='true', 'streaming-source.partition.include' = 'latest'" +
+//                        ", 'streaming-source.partition-order' = 'create-time', 'streaming-source.monitor-interval' = '20 s'" +
+//                        ") */"
+                        + " on b.cert_type = a.type "
 //                + " where b.cert_type is not null"
         );
 
@@ -169,6 +171,7 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
         //列名的选择需要根据时间段动态变！自定义一个函数，提供这个列名
         /*
             streaming-source.partition.include 加在join这里也是不奏效的
+                        必须得放在首次查hive表时
          */
         Table itemResultTable = tableEnv.sqlQuery(
                 "select  t.cert_type, t.cert_nbr, a.couponId, a.storeId, a.storeRange, a.userNum, a.uniqueReqId  " +
@@ -177,7 +180,7 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
                 "SELECT cert_type, cert_nbr, couponId, storeId, storeRange, userNum, uniqueReqId " +
                         "FROM " + joinResTable
                         +
-//                        " /*+ OPTIONS('streaming-source.enable'='true', 'streaming-source.partition.include' = 'latestKK'" +
+//                        " /*+ OPTIONS('streaming-source.enable'='true', 'streaming-source.partition.include' = 'latest'" +
 //                        ", 'streaming-source.partition-order' = 'create-time', 'streaming-source.monitor-interval' = '20 s'" +
 //                        ") */"  +
 
