@@ -8,10 +8,14 @@ import com.kunghsu.example.coupon.function.LngFunction;
 import com.kunghsu.example.coupon.table.CouponInputTableVO2;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.runtime.state.filesystem.FsStateBackend;
+import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
+import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
@@ -30,6 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import static org.apache.flink.table.api.Expressions.$;
 
@@ -50,19 +55,39 @@ import static org.apache.flink.table.api.Expressions.$;
  * 能自动识别, 'streaming-source.partition.include' = 'latest' 亲测成功
  * 建表语句详见doc目录
  *
+ * 验证Checkpoint机制
+ *
  * author:xuyaokun_kzx
  * date:2022/2/17
  * desc:
 */
-public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
+public class UserCouponMatchingAutoIdentifyPartitionByLatestWithCheckPointTask {
 
-    private final static Logger LOGGER = LoggerFactory.getLogger(UserCouponMatchingAutoIdentifyPartitionByLatestTask2.class);
+    private final static Logger LOGGER = LoggerFactory.getLogger(UserCouponMatchingAutoIdentifyPartitionByLatestWithCheckPointTask.class);
 
     public static void main(String[] args) throws Exception {
 
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         EnvironmentSettings environmentSettings = EnvironmentSettings.newInstance().useBlinkPlanner().inStreamingMode().build();
         StreamTableEnvironment tableEnv = StreamTableEnvironment.create(env, environmentSettings);
+
+//        env.setStateBackend(new MemoryStateBackend(10*1024*1024));
+        env.setStateBackend(new FsStateBackend("hdfs://127.0.0.1:9000/checkpoint/cp1"));
+
+        //开启CheckPoint
+        env.enableCheckpointing(2000);
+        env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.AT_LEAST_ONCE);
+        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(500);
+        env.getCheckpointConfig().setCheckpointTimeout(60000);
+        env.getCheckpointConfig().setMaxConcurrentCheckpoints(1);
+        env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
+        env.getCheckpointConfig().setPreferCheckpointForRecovery(true);
+
+        //设置重启策略
+        env.setRestartStrategy(RestartStrategies.fixedDelayRestart(
+                3, // 尝试重启的次数
+                org.apache.flink.api.common.time.Time.of(10, TimeUnit.SECONDS) // 延时
+        ));
 
         FlinkKafkaConsumer<String> flinkKafkaConsumer = KafkaConsumerProducerConfig.getFlinkKafkaConsumer("coupon-input");
         //添加输入源
@@ -253,7 +278,7 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
         SingleOutputStreamOperator<ResultWrapVO> itemResultOutputStream2 = itemResultOutputStream.keyBy(new KeySelector<CouponOutputMsg, String>() {
             @Override
             public String getKey(CouponOutputMsg couponOutputMsg) throws Exception {
-
+                System.out.println("进入键控阶段");
                 return StringUtils.join(new String[]{
                         couponOutputMsg.getCOUPON_ID(),
                         couponOutputMsg.getSTORE_ID(),
@@ -277,6 +302,16 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
                             }
                         }
                         resultWrapVO.setItemList(itemList);
+
+                        //在这里模拟一个处理耗时稍长的过程
+                        //
+                        System.out.println("开始执行WindowFunction");
+                        for (int i = 0; i < 5; i++) {
+                            Thread.sleep(2000);
+                        }
+                        System.out.println("结束执行WindowFunction");
+                        System.out.println("模拟一个异常");
+                        int a = 1/0;
                         out.collect(resultWrapVO);
                     }
                 });
@@ -315,8 +350,13 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
         FlinkKafkaProducer flinkKafkaProducer = FlinkKafkaConfig.getFlinkKafkaProducer("coupon-output");
 //        itemResultOutputStream.addSink(flinkKafkaProducer);
 
-        System.out.println("开始执行UserCouponMatchingTask6");
-        env.execute();
+        LOGGER.info("开始执行UserCouponMatchingAutoIdentifyPartitionByLatestWithCheckPointTask");
+        System.out.println("开始执行UserCouponMatchingAutoIdentifyPartitionByLatestWithCheckPointTask");
+        env.execute("UserCouponMatchingAutoIdentifyPartitionByLatestWithCheckPointTask");
+
+//        String externalCheckpoint = "file:///Users/fanrui03/Documents/tmp/checkpoint/f74a3a6af248b9aaeb81f61f83164c31/chk-1";
+//        String externalCheckpoint = "file:///checkpoint/cp1/fbbe6a04fa10bb4a4bca5b2298ff7074/chk-3";
+//        CheckpointRestoreByIDEUtils.run(env.getStreamGraph(), externalCheckpoint);//不奏效
     }
 
     static class ResultWrapVO {
