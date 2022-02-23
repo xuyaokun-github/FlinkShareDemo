@@ -105,7 +105,8 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
         String catalogName = "myhive";
         //hive-site.xml的正确位置
         String hiveConfDir = "D:\\hive\\apache-hive-2.3.6-bin\\conf";
-        String version = "2.3.6";
+//        String version = "2.3.6";
+        String version = "3.1.2";
         String database = "test";
         HiveCatalog hive = new HiveCatalog(catalogName, "default", hiveConfDir, version);
 
