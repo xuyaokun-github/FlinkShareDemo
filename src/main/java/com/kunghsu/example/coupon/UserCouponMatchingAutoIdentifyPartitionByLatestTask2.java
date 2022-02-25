@@ -1,10 +1,9 @@
 package com.kunghsu.example.coupon;
 
 import com.kunghsu.apache.flink.flinkkafka.config.FlinkKafkaConfig;
+import com.kunghsu.common.utils.DateUtils;
 import com.kunghsu.common.utils.JacksonUtils;
-import com.kunghsu.example.coupon.function.CurrentMinute;
-import com.kunghsu.example.coupon.function.LatFunction;
-import com.kunghsu.example.coupon.function.LngFunction;
+import com.kunghsu.example.coupon.function.UdfTimePeriodFunction;
 import com.kunghsu.example.coupon.table.CouponInputTableVO2;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.common.functions.MapFunction;
@@ -50,6 +49,8 @@ import static org.apache.flink.table.api.Expressions.$;
  * 能自动识别, 'streaming-source.partition.include' = 'latest' 亲测成功
  * 建表语句详见doc目录
  *
+ * date_format(NOW(), 'yyyy-MM-dd HH:mm:ss') 在维表场景有问题，需要改用法，不能在维表SQL中使用 NOW()或者CURRENT_TIMESTAMP类似的SQL
+ *
  * author:xuyaokun_kzx
  * date:2022/2/17
  * desc:
@@ -63,6 +64,8 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         EnvironmentSettings environmentSettings = EnvironmentSettings.newInstance().useBlinkPlanner().inStreamingMode().build();
         StreamTableEnvironment tableEnv = StreamTableEnvironment.create(env, environmentSettings);
+
+//        env.setStreamTimeCharacteristic(TimeCharacteristic.ProcessingTime);
 
         FlinkKafkaConsumer<String> flinkKafkaConsumer = KafkaConsumerProducerConfig.getFlinkKafkaConsumer("coupon-input");
         //添加输入源
@@ -88,6 +91,8 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
                 couponInputTableVO.setUniqueReqId(value.getUNIQUE_REQ_ID());
                 couponInputTableVO.setCreateTime(new Date());
                 couponInputTableVO.setType("1");
+                //时段
+                couponInputTableVO.setDateString(DateUtils.now());
                 System.out.println("分流前转换得到内容：" + JacksonUtils.toJSONString(couponInputTableVO));
                 return couponInputTableVO;
             }
@@ -97,6 +102,7 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
         Table inputTable = tableEnv.fromDataStream(stream2, $("couponId"), $("storeId"),
                 $("storeRange"), $("storeLongitude"), $("storeLatitude"),
                 $("userNum"), $("uniqueReqId"), $("type"),
+//                $("dateString"),
                 $("proctime").proctime());
 
         //获取hive的表
@@ -117,9 +123,7 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
 //        tableEnv.getConfig().setSqlDialect(SqlDialect.HIVE);
 
         // 注册函数
-        tableEnv.createTemporarySystemFunction("lat", LatFunction.class);
-        tableEnv.createTemporarySystemFunction("lng", LngFunction.class);
-        tableEnv.createTemporarySystemFunction("curMinute", CurrentMinute.class);
+        tableEnv.createTemporarySystemFunction("udfTimePeriod", UdfTimePeriodFunction.class);
 
         tableEnv.getConfig().getConfiguration().setString("table.dynamic-table-options.enabled", "true");
 
@@ -152,7 +156,11 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
         Table joinResTable = tableEnv.sqlQuery("select a.*,b.* " +
                 "from " + inputTable + " AS a join " + hiveTable
 //                + " /*+ OPTIONS('streaming-source.enable'='true', 'streaming-source.partition.include' = 'latest'" +
-//                ", 'streaming-source.partition-order' = 'create-time', 'streaming-source.monitor-interval' = '20 s'" +
+//                        ", 'streaming-source.monitor-interval' = '20 s'" +
+//                        ", 'streaming-source.partition-order' = 'create-time'" +
+//                        ", 'streaming-source.partition-order' = 'partition-time'" +
+//                        ", 'partition.time-extractor.kind' = 'default'" +
+//                        ", 'partition.time-extractor.timestamp-pattern' = '$pt_year-$pt_month-$pt_day 00:00:00'" +
 //                ") */"
                 + " FOR SYSTEM_TIME AS OF a.proctime AS b " //
 //                "  AS b " //不指定SYSTEM_TIME，是错误的
@@ -187,21 +195,21 @@ public class UserCouponMatchingAutoIdentifyPartitionByLatestTask2 {
 
                         " where ROUND(6378.138 * 2 * ASIN(SQRT(\n" +
                         "POWER(SIN((CAST(storeLatitude as double) * PI() / 180 - CAST(" +
-                        "(CASE '0'\n" +
+                        "(CASE udfTimePeriod(couponId)\n" +
                         "WHEN '0' THEN lat\n" +
                         "WHEN '1' THEN lat_night\n" +
                         "ELSE lat_night \n" +
                         "END) " +
                         " as double) * PI() / 180) / 2), 2)\n" +
                         "+ COS(CAST(storeLatitude as double) * PI() / 180) * COS(CAST(" +
-                        "(CASE '0'\n" +
+                        "(CASE udfTimePeriod(couponId)\n" +
                         "WHEN '0' THEN lat\n" +
                         "WHEN '1' THEN lat_night\n" +
                         "ELSE lat_night \n" +
                         "END) " +
                         " as double) * PI() / 180) * \n" +
                         "POWER(SIN((CAST(storeLongitude as double) * PI() / 180 - CAST(" +
-                        "(CASE '0'\n" +
+                        "(CASE udfTimePeriod(couponId)\n" +
                         "WHEN '0' THEN lng\n" +
                         "WHEN '1' THEN lng_night\n" +
                         "ELSE lng_night \n" +

@@ -14,6 +14,7 @@ public class CouponInputTableVO2 {
     private String uniqueReqId;
     private Date createTime;
     private String type = "6";//证件类型
+    private String dateString;//时段
 
     public String getCouponId() {
         return couponId;
@@ -95,9 +96,17 @@ public class CouponInputTableVO2 {
         this.type = type;
     }
 
+    public String getDateString() {
+        return dateString;
+    }
+
+    public void setDateString(String dateString) {
+        this.dateString = dateString;
+    }
+
     @Override
     public String toString() {
-        return "CouponInputTableVO{" +
+        return "CouponInputTableVO2{" +
                 "couponId='" + couponId + '\'' +
                 ", storeRange='" + storeRange + '\'' +
                 ", storeLongitude='" + storeLongitude + '\'' +
@@ -106,6 +115,9 @@ public class CouponInputTableVO2 {
                 ", messageType='" + messageType + '\'' +
                 ", storeId='" + storeId + '\'' +
                 ", uniqueReqId='" + uniqueReqId + '\'' +
+                ", createTime=" + createTime +
+                ", type='" + type + '\'' +
+                ", period='" + dateString + '\'' +
                 '}';
     }
 }
