@@ -1,29 +1,44 @@
-package com.kunghsu.apache.flink.demo1;
+package com.kunghsu.apache.flink.demo.globalJobParameters;
 
+import com.kunghsu.apache.flink.common.FlinkDemoJob;
+import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.JobExecutionResult;
-import org.apache.flink.api.common.functions.FilterFunction;
+import org.apache.flink.api.common.functions.RichFlatMapFunction;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.util.Collector;
 
 import java.util.Arrays;
 import java.util.List;
 
 /**
- * 采用服务端运行模式
+ * 全局属性使用例子
  *
  * author:xuyaokun_kzx
  * date:2021/9/10
  * desc:
 */
-public class LocalRunningDataSourceTest2 {
+public class GlobalJobParametersTest implements FlinkDemoJob {
 
     public static void main(String[] args) {
+        new GlobalJobParametersTest().run(args);
+    }
+
+    @Override
+    public void run(String[] args) {
 
         // 采用本地模式
-//        StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
+
+        Configuration conf = new Configuration();
+        conf.setString("mykey", "myvalue");
+//        ExecutionConfig.GlobalJobParameters globalJobParameters = new ExecutionConfig.GlobalJobParameters();
+        env.getConfig().setGlobalJobParameters(conf);
+
 
         // 采用服务端运行模式
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+//        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
 
         // 从本地的webUI方式提供createLocalEnvironmentWithWebUI
@@ -42,41 +57,34 @@ public class LocalRunningDataSourceTest2 {
         List<Person> personList = Arrays.asList(new Person("Fred", 35),
                 new Person("Wilma", 35),
                 new Person("Pebbles", 2));
-        DataStream<Person> flintstones = env.fromCollection(personList);
+        DataStream<Person> flintstones = env.fromCollection(personList).name("firstSource").uid("firstSource");
 
-        //执行过滤操作
-        DataStream<Person> adults = flintstones.filter(new FilterFunction<Person>() {
+        //执行中间操作
+        DataStream<Person> flintstones2 = flintstones.flatMap(new RichFlatMapFunction<Person, Person>() {
 
-            /**
-             * 筛选18岁以上的
-             * @param person
-             * @return
-             * @throws Exception
-             */
+            //需要用到的全局属性，可以用一个属性来承接
+            private String mykey;
+
             @Override
-            public boolean filter(Person person) throws Exception {
-                return person.age >= 18;
+            public void open(Configuration parameters) throws Exception {
+                super.open(parameters);
+                ExecutionConfig.GlobalJobParameters globalParams = getRuntimeContext().getExecutionConfig().getGlobalJobParameters();
+                Configuration globConf = (Configuration) globalParams;
+                //获取全局属性
+                mykey = globConf.getString("mykey", null);
+            }
+
+            @Override
+            public void flatMap(Person value, Collector<Person> out) throws Exception {
+
+                //修改,在名字前面拼上一个全局属性
+                value.setName(value.getName() + "-" + mykey);
+                out.collect(value);
             }
         });
 
-        adults.print();
+        flintstones2.print();
 
-        System.out.println("开始对数据流设置二次过滤函数式实例");
-        DataStream<Person> adults2 = adults.filter(new FilterFunction<Person>() {
-
-            /**
-             * 筛选以F开头的
-             * @param person
-             * @return
-             * @throws Exception
-             */
-            @Override
-            public boolean filter(Person person) throws Exception {
-                return person.name.startsWith("F");
-            }
-        });
-
-        adults2.print();
         try {
             /*
                 最后开始执行

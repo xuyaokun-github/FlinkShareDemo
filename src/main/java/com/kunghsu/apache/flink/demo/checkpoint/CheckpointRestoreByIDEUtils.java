@@ -1,4 +1,4 @@
-package com.kunghsu.apache.flink.checkpoint;
+package com.kunghsu.apache.flink.demo.checkpoint;
 
 import org.apache.flink.client.program.ClusterClient;
 import org.apache.flink.runtime.instance.SlotSharingGroupId;

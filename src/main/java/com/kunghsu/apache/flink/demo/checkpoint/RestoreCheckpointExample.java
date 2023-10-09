@@ -1,4 +1,4 @@
-package com.kunghsu.apache.flink.checkpoint;
+package com.kunghsu.apache.flink.demo.checkpoint;
 
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.runtime.state.filesystem.FsStateBackend;

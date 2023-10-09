@@ -1,14 +1,10 @@
-package com.kunghsu.apache.flink.demo1;
+package com.kunghsu.apache.flink.demo;
 
-import com.kunghsu.apache.flink.FlinkDemoJob;
+import com.kunghsu.apache.flink.common.FlinkDemoJob;
 import org.apache.flink.api.common.JobExecutionResult;
-import org.apache.flink.api.common.functions.RichFlatMapFunction;
+import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.ProcessFunction;
-import org.apache.flink.util.Collector;
-import org.apache.flink.util.OutputTag;
 
 import java.util.Arrays;
 import java.util.List;
@@ -20,20 +16,17 @@ import java.util.List;
  * date:2021/9/10
  * desc:
 */
-public class OutputTagTestJob implements FlinkDemoJob {
-
-    public static void main(String[] args) {
-        new OutputTagTestJob().run(args);
-    }
+public class RemoteServerRunTestJob implements FlinkDemoJob {
 
     @Override
     public void run(String[] args) {
 
         // 采用本地模式
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
+//        StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
 
         // 采用服务端运行模式
-//        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
 
         // 从本地的webUI方式提供createLocalEnvironmentWithWebUI
         // Configuration conf=new Configuration();
@@ -47,48 +40,45 @@ public class OutputTagTestJob implements FlinkDemoJob {
 //                        new Person("Wilma", 35),
 //                        new Person("Pebbles", 2));
 
-        //这个实例，可以放到常量类 id就表示某一类业务的旁路输出，不同业务不要用相同的ID,会出错
-        final OutputTag<Person> outputTag = new OutputTag<Person>("side-output") {};
-
         //方式2:fromCollection
         List<Person> personList = Arrays.asList(new Person("Fred", 35),
                 new Person("Wilma", 35),
                 new Person("Pebbles", 2));
         DataStream<Person> flintstones = env.fromCollection(personList);
 
-        //执行中间操作
-        DataStream<Person> flintstones2 = flintstones.flatMap(new RichFlatMapFunction<Person, Person>() {
+        //执行过滤操作
+        DataStream<Person> adults = flintstones.filter(new FilterFunction<Person>() {
 
-
+            /**
+             * 筛选18岁以上的
+             * @param person
+             * @return
+             * @throws Exception
+             */
             @Override
-            public void flatMap(Person value, Collector<Person> out) throws Exception {
-                out.collect(value);
+            public boolean filter(Person person) throws Exception {
+                return person.age >= 18;
             }
         });
 
-        SingleOutputStreamOperator<Person> flintstones3 = flintstones2.process(new ProcessFunction<Person, Person>() {
+        adults.print();
 
+        System.out.println("开始对数据流设置二次过滤函数式实例");
+        DataStream<Person> adults2 = adults.filter(new FilterFunction<Person>() {
+
+            /**
+             * 筛选以F开头的
+             * @param person
+             * @return
+             * @throws Exception
+             */
             @Override
-            public void processElement(Person person, Context context, Collector<Person> collector) throws Exception {
-
-                if (person.getName().startsWith("W")){
-                    //执行成功的，放正常输出流
-                    collector.collect(person);
-                }else {
-                    //执行失败的，放旁路输出流
-                    //旁路输出的类型不需要和源类型一致，可自由定义类型，例子中还是输出person类型
-                    context.output(outputTag, person);
-                }
+            public boolean filter(Person person) throws Exception {
+                return person.name.startsWith("F");
             }
         });
 
-//        flintstones3.print();
-
-        //SingleOutputStreamOperator才能调用getSideOutput方法
-        //getSideOutput方法不是DataStream接口的方法
-        DataStream outputTagStream = flintstones3.getSideOutput(outputTag);
-        outputTagStream.print();
-
+        adults2.print();
         try {
             /*
                 最后开始执行

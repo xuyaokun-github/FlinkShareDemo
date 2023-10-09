@@ -1,4 +1,4 @@
-package com.kunghsu.apache.flink;
+package com.kunghsu.apache.flink.common;
 
 import com.kunghsu.common.utils.DateUtils;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;

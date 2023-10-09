@@ -1,4 +1,4 @@
-package com.kunghsu.apache.flink.checkpoint;
+package com.kunghsu.apache.flink.demo.checkpoint;
 
 import org.apache.flink.contrib.streaming.state.PredefinedOptions;
 import org.apache.flink.contrib.streaming.state.RocksDBStateBackend;

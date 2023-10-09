@@ -1,6 +1,6 @@
-package com.kunghsu.apache.flink.demo1;
+package com.kunghsu.apache.flink.demo.demo1;
 
-import com.kunghsu.apache.flink.FlinkDemoJob;
+import com.kunghsu.apache.flink.common.FlinkDemoJob;
 import com.kunghsu.common.utils.JacksonUtils;
 
 public class MyFlinkDemoJob implements FlinkDemoJob {

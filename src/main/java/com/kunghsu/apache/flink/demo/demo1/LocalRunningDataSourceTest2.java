@@ -1,6 +1,5 @@
-package com.kunghsu.apache.flink.demo1;
+package com.kunghsu.apache.flink.demo.demo1;
 
-import com.kunghsu.apache.flink.FlinkDemoJob;
 import org.apache.flink.api.common.JobExecutionResult;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -16,16 +15,15 @@ import java.util.List;
  * date:2021/9/10
  * desc:
 */
-public class LocalRunningDataSourceTestJob implements FlinkDemoJob {
+public class LocalRunningDataSourceTest2 {
 
-    @Override
-    public void run(String[] args) {
+    public static void main(String[] args) {
 
         // 采用本地模式
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
+//        StreamExecutionEnvironment env = StreamExecutionEnvironment.createLocalEnvironment();
 
         // 采用服务端运行模式
-//        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
 
         // 从本地的webUI方式提供createLocalEnvironmentWithWebUI

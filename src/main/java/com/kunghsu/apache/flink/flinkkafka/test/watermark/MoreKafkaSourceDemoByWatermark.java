@@ -1,6 +1,6 @@
 package com.kunghsu.apache.flink.flinkkafka.test.watermark;
 
-import com.kunghsu.apache.flink.FlinkUtils;
+import com.kunghsu.apache.flink.common.FlinkUtils;
 import com.kunghsu.apache.flink.flinkkafka.TopicConstants;
 import com.kunghsu.apache.flink.flinkkafka.config.FlinkKafkaConfig;
 import com.kunghsu.apache.flink.flinkkafka.model.FlinkTopicMsg;

@@ -1,4 +1,4 @@
-package com.kunghsu.apache.flink;
+package com.kunghsu.apache.flink.common;
 
 public interface FlinkDemoJob {
 

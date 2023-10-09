@@ -68,6 +68,7 @@ public class FlinkKafkaConfig {
 
 
     public static FlinkKafkaProducer getFlinkKafkaProducer(String topic){
+
         //生产者配置
         Properties produceProperties = new Properties();
         produceProperties.setProperty("bootstrap.servers", "localhost:9092");

@@ -1,4 +1,4 @@
-package com.kunghsu.apache.flink.demo1;
+package com.kunghsu.apache.flink.demo.demo1;
 
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.streaming.api.datastream.DataStream;
